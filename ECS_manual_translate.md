@@ -140,3 +140,42 @@ group.transform[index] = transform; // Write
 IComponentData 结构不能包含托管对象的引用。因为所有的ComponentData的生命周期都在无垃圾回收检测的内存块内存中。
 
 详见源码文件：/Packages/com.unity.entities/Unity.Entities/IComponentData.cs
+
+## 共享组件数据
+
+共享组件是一种特殊的数据组件，可以用来根据共享组件的特定值划分实体子类型（是通过实体所属原型划分之外的划分方法）。当向实体中添加共享组件的时候，EntityManager将所有拥有相同共享数据值的实体放进相同的内存块中。共享组件允许系统同时处理相似的实体。例如，共享组件Rendering.RenderMesh,作为Hybrid.renderting包中的一部分，定义了包括网格（mesh），材质（material），阴影表面（recieveShadows）等属性。在渲染过程中最高效的处理方式是将所有这些属性值相同的3D对象一起处理。因为这些属性被指定在一个共享组件中，EntityManager将相同的实体在内存中放到一块，所以渲染系统可以高效的遍历这些实体。
+
+**注意**：过度使用共享组件可能导致内存块的利用率低下，因为这涉及到基于原型划分和各种共享组件的唯一属性值划分这两种方式结合所引发的内存块数量膨胀。可以通过使用Entity Debugger来查看当前的内存块利用情况来避免将不必要的属性添加到共享组件中。
+
+如果你从实体中添加或者删除组件，或是改变了共享组件中的值，EntityManager会讲实体专移动到别的内存块中，必要时会创建新的内存块。
+
+IComponentData 对于彼此间数据不同的实体来说通常是适用的，例如存储世界位置，表示碰撞点，例子生存时间等。相反，ISharedComponentData 适合很多实体共享相同数据的情况。例如在Boid demo中我们通过相同的（预制）Prefab实例化了大量的实体，因此在大量的Boid实体之间RenderMesh都是完全一样的。
+
+```c#
+
+[System.Serializable]
+public struct RenderMesh : ISharedComponentData
+{
+    public Mesh                 mesh;
+    public Material             material;
+
+    public ShadowCastingMode    castShadows;
+    public bool                 receiveShadows;
+}
+
+```
+
+ISharedComponentData的最大优势是对于每一个实例的角度来看可以说是零内存消耗。
+
+我们使用ISharedComponentData将所有InstanceRender数据相同的实体分组到一块，然后高效的提取所有的矩阵用于渲染。最终代码简洁而高效，这是因为数据完全是按照数据的访问方式来排布的。
+
++ RenderMeshSystemV2（参见代码文件Packages/com.unity.entities/Unity.Rendering.Hybrid/RenderMeshSystemV2.cs）
+
+#### 关于共享组件数据的一些重要注意事项
+
++ 带有相同共享组件数据的实体在相同的内存块中分组到一起。共享组件数据的索引在每一个内存块中存储一份，而不是每个实体存一份。这样做的结果就是从每一个实体的角度来看共享组件数据都是零内存消耗的。
++ 使用实体查询（EntityQuery）我们可以遍历所有相同类型的实体。
++ 另外我们还可以使用EntityQuery。SetFilter（）来遍历带有指定共享组件数据的实体。由于数据排列方式这种遍历性能消耗很低。
++ 我们可以使用EntityMananger.GetAllUniqueSharedComponents来获取所有当前可用实体中添加的所有独一无二的共享组件数据。
++ 共享组件数据是自动引用计数的。
++ 共享组件数据应当很少变更。改变共享组件数据涉及到使用memcpy将实体中所有的组件数据拷贝到别的内存块中。
