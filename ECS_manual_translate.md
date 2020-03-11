@@ -11,14 +11,17 @@
 
 实体组件系统 Entity Component System (ECS) 架构将定义（Entities），数据（Components），行为（Systems）独立区分开。架构聚焦于数据。 系统通过读取由实体索引的组件数据流，将数据的状态从某种输入状态转变为某种输出状态。
 
-下图展示了这三个基本部分是如何工作的
-![ECS三部分如何工作](https://raw.githubusercontent.com/MadWeedFall/UnityDocs/master/img/ECS_manual_translate/ECSBlockDiagram.png)
+下图展示了这三个基本部分是如何工作的   
+
+![ECS三部分如何工作](https://raw.githubusercontent.com/MadWeedFall/UnityDocs/master/img/ECS_manual_translate/ECSBlockDiagram.png)     
 
 在上图中系统读取位移和旋转组件，将它们相乘用于更新与它们关联的本地坐标组件。
 实体A与实体B都有渲染器组件，而实体C没有，这并不影响系统，因为系统并不关注渲染器组件（你可以创建一个需要渲染器组件的系统，在这种情况下，系统会忽略实体C；或者你也可以创建一个排除带渲染器组件实体的系统，这样系统就会忽略实体A和实体B）
 
 #### 原型 Archetypes
 某种特定的组件类型的组合称作原型。例如，某种3D对象可以有一个代表世界位移的组件，一个代表线性移动的组件，一个代表旋转的组件，还有一个用于视觉展现的组件。这种3D对象的每一个实例都与一个单独实体相关联，但由于他们都有一系列相同的组件，这些对象实例都可以归类为同一个原型。
+
+![ECS三部分如何工作](https://raw.githubusercontent.com/MadWeedFall/UnityDocs/master/img/ECS_manual_translate/ArchetypeDiagram.png)     
 
 如上图所示，实体A和B都属于原型M，而实体C属于原型N。
 
@@ -185,3 +188,200 @@ ISharedComponentData的最大优势是对于每一个实例的角度来看可以
 系统状态组件存在的意义是允许你跟踪系统内部的资源，并且在不需要依赖单独的回调的前提下，可以合理的按需创建和销毁资源。
 
 系统状态组件数据（SystemStateComponentData）和系统状态共享组件数据二者与组件数据和共享组件数据完全一致，严格的说，除了一个重要方面：系统状态组件数据在实体被销毁时不会被删除。
+
+DestroyEntity 可以概括为以下三项内容：
++ 1.找到所有饮用特定实体ID的组件
++ 2.将找到的组件删除
++ 3.回收利用实体ID
+
+然而如果存在系统状态组件数据的话，系统状态组件数据是不会被删除的。这使得系统可以清理任何与实体ID相关联的资源或者状态。只有当所有的系统状态组件数据都被删除的时候实体ID才会被回收。
+
+#### 使用系统状态组件的动机
+
++ 系统可能需要根据组件数据维护内部状态。例如，某些资源可能需要被分配
++ 系统需要能够将状态按照值来管理，并且能够管理其他系统对状态值的修改。例如，当组件值的被修改时，或者相关组件被添加或删除时。
++ “不使用回调”是ECS设计规则中的重要元素
+
+### 系统状态组件相关概念
+
+通常来说系统状态组件数据都应该是某个用户组件的镜像，用于内部状态处理。
+
+举例来说，假定有：
+
++ FooComponent（组件数据，用户添加）
++ FooStateComponent（系统组件数据，系统添加）
+
+#### 检测组件添加
+
+当用户添加FooComponent时，FooStateComponent 还不存在。FooSystem在更新对FooComponent的查询时候找不到FooStateComponent，并由此推断这个组件刚被添加进来。此时，FooSystem会添加FooStateComponent并同时添加所需的内部状态。
+
+#### 检测组件删除
+
+当用户删除FooComponent时，FooStateComponent还存在。FooSystem在更新对FooStateComponent的查询时找不到FooComponent，并由此推断组件被删除了。此时，FooSystem会删除FooStateComponent并修复任何需要的内部状态。
+
+#### 检测销毁实体
+
+正如上面所说的，DestroyEntity 实际上可以概括为以下三项内容：
++ 1.找到所有饮用特定实体ID的组件
++ 2.将找到的组件删除
++ 3.回收利用实体ID
+
+然而，系统状态组件数据在DestroyEntity执行时不会被移除，实体ID直到最后一个组件被删除时才会被回收。这样做是的系统能够在组件被删除时使用相同的方法清理内部状态。
+
+#### SystemStateComponent
+
+SystemStateComponentData和ComponentData形式类似，用法也相似
+
+```C#
+struct FooStateComponent : ISystemStateComponentData
+{
+}
+```
+
+SystemStateComponetData的可访问性的控制方式也和组件一致（使用private，public，internal）然而有一条规则例外，即SystemStateComponentData在创建它的系统之外是只读的（ReadOnly）
+
+#### SystemStateSharedComponent
+
+SystemStateSharedComponent和SharedComponentData形式类似，用法也相似
+
+```c#
+struct FooStateSharedComponent : ISystemStateSharedComponentData
+{
+  public int Value;
+}
+```
+
+#### 使用状态组件的系统示例
+
+下面的示例掩饰了一个简单的系统如何使用系统状态组件来管理实体。示例定义了一个泛用的IComponentData实例和一个系统状态，即ISystemStateComponentData实例。示例还定一个了对实体的三组查询：
+
++ m_newEntities 筛选出带有泛用组件而不带系统状态组件的实体。这组查询查找到系统中刚刚出现的新实体。系统使用这个新实体的查询结果运行一个事务（job）来给这些实体添加系统状态组件。
++ m_activeEntities 筛选出既包含泛用组件又包含系统状态组件的实体。在真实的应用中，会使用其他系统来销毁实体。
++ m_destroyedEntities 筛选出有系统状态组件，但是没有泛用组件的实体。因为实体不能自己给自己添加系统状态组件，由这个查询筛选出的实体只能被删除，删除操作或是由该系统本身，或是由其他系统来执行。系统使用被销毁的的实体的查询结果来巡行一个事务（job）来从实体中删除系统状态组件，之后ECS代码就可以回收利用实体的标识符了。
+
+注意这个简化的示例并不在系统内维护任何状态。系统状态组件的目的之一是记录需要分配或清理的常驻资源。
+
+```c#
+
+using Unity.Collections;
+using Unity.Entities;
+using Unity.Jobs;
+using UnityEngine;
+
+public struct GeneralPurposeComponentA : IComponentData
+{
+    public bool IsAlive;
+}
+
+public struct StateComponentB : ISystemStateComponentData
+{
+    public int State;
+}
+
+public class StatefulSystem : JobComponentSystem
+{
+    private EntityQuery m_newEntities;
+    private EntityQuery m_activeEntities;
+    private EntityQuery m_destroyedEntities;
+    private EntityCommandBufferSystem m_ECBSource;
+
+    protected override void OnCreate()
+    {
+        // Entities with GeneralPurposeComponentA but not StateComponentB
+        m_newEntities = GetEntityQuery(new EntityQueryDesc()
+        {
+            All = new ComponentType[] {ComponentType.ReadOnly<GeneralPurposeComponentA>()},
+            None = new ComponentType[] {ComponentType.ReadWrite<StateComponentB>()}
+        });
+
+        // Entities with both GeneralPurposeComponentA and StateComponentB
+        m_activeEntities = GetEntityQuery(new EntityQueryDesc()
+        {
+            All = new ComponentType[]
+            {
+                ComponentType.ReadWrite<GeneralPurposeComponentA>(),
+                ComponentType.ReadOnly<StateComponentB>()
+            }
+        });
+
+        // Entities with StateComponentB but not GeneralPurposeComponentA
+        m_destroyedEntities = GetEntityQuery(new EntityQueryDesc()
+        {
+            All = new ComponentType[] {ComponentType.ReadWrite<StateComponentB>()},
+            None = new ComponentType[] {ComponentType.ReadOnly<GeneralPurposeComponentA>()}
+        });
+
+        m_ECBSource = World.GetOrCreateSystem<EndSimulationEntityCommandBufferSystem>();
+    }
+
+    struct NewEntityJob : IJobForEachWithEntity<GeneralPurposeComponentA>
+    {
+        public EntityCommandBuffer.Concurrent ConcurrentECB;
+
+        public void Execute(Entity entity, int index, [ReadOnly] ref GeneralPurposeComponentA gpA)
+        {
+            // Add an ISystemStateComponentData instance
+            ConcurrentECB.AddComponent<StateComponentB>(index, entity, new StateComponentB() {State = 1});
+        }
+    }
+
+    struct ProcessEntityJob : IJobForEachWithEntity<GeneralPurposeComponentA>
+    {
+        public EntityCommandBuffer.Concurrent ConcurrentECB;
+
+        public void Execute(Entity entity, int index, ref GeneralPurposeComponentA gpA)
+        {
+            // Process entity, possibly setting IsAlive false --
+            // In which case, destroy the entity
+            if (!gpA.IsAlive)
+            {
+                ConcurrentECB.DestroyEntity(index, entity);
+            }
+        }
+    }
+
+    struct CleanupEntityJob : IJobForEachWithEntity<StateComponentB>
+    {
+        public EntityCommandBuffer.Concurrent ConcurrentECB;
+
+        public void Execute(Entity entity, int index, [ReadOnly] ref StateComponentB state)
+        {
+            // This system is responsible for removing any ISystemStateComponentData instances it adds
+            // Otherwise, the entity is never truly destroyed.
+            ConcurrentECB.RemoveComponent<StateComponentB>(index, entity);
+        }
+    }
+
+    protected override JobHandle OnUpdate(JobHandle inputDependencies)
+    {
+        var newEntityJob = new NewEntityJob()
+        {
+            ConcurrentECB = m_ECBSource.CreateCommandBuffer().ToConcurrent()
+        };
+        var newJobHandle = newEntityJob.ScheduleSingle(m_newEntities, inputDependencies);
+        m_ECBSource.AddJobHandleForProducer(newJobHandle);
+
+        var processEntityJob = new ProcessEntityJob()
+            {ConcurrentECB = m_ECBSource.CreateCommandBuffer().ToConcurrent()};
+        var processJobHandle = processEntityJob.Schedule(m_activeEntities, newJobHandle);
+        m_ECBSource.AddJobHandleForProducer(processJobHandle);
+
+        var cleanupEntityJob = new CleanupEntityJob()
+        {
+            ConcurrentECB = m_ECBSource.CreateCommandBuffer().ToConcurrent()
+        };
+        var cleanupJobHandle = cleanupEntityJob.ScheduleSingle(m_destroyedEntities, processJobHandle);
+        m_ECBSource.AddJobHandleForProducer(cleanupJobHandle);
+
+        return cleanupJobHandle;
+    }
+
+    protected override void OnDestroy()
+    {
+        // Implement OnDestroy to cleanup any resources allocated by this system.
+        // (This simplified example does not allocate any resources.)
+    }
+}
+
+
+``` 
