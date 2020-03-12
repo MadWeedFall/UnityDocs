@@ -385,3 +385,99 @@ public class StatefulSystem : JobComponentSystem
 
 
 ``` 
+
+## 动态缓冲区
+
+动态缓冲区（DynamicBuffer）是一种组件数据，这种组件数据提供了一种与实体相关联的容量可变，可伸缩的缓冲区。动态缓冲区看起来像是臃肿内部能够容纳一定数量元素的组件类型，但是能偶在内部容量耗尽时分配堆内存。
+
+内存管理在使用动态缓冲区时时全自动的。与动态缓冲区相关的内存通过EntityManager来管理，因此当动态缓冲区组件被删除时，与之相关的对内存也被自动释放掉了。
+
+动态缓冲区取代了固定数组，后者已被删除。
+
+#### 声明缓冲区元素类型
+
+要声明一个缓冲区，你需要使用将要放进缓冲区中的元素的类型来声明缓冲区。
+
+```c#
+
+// This describes the number of buffer elements that should be reserved
+// in chunk data for each instance of a buffer. In this case, 8 integers
+// will be reserved (32 bytes) along with the size of the buffer header
+// (currently 16 bytes on 64-bit targets)
+[InternalBufferCapacity(8)]
+public struct MyBufferElement : IBufferElementData
+{
+    // These implicit conversions are optional, but can help reduce typing.
+    public static implicit operator int(MyBufferElement e) { return e.Value; }
+    public static implicit operator MyBufferElement(int e) { return new MyBufferElement { Value = e }; }
+
+    // Actual value each buffer element will store.
+    public int Value;
+}
+
+```
+
+虽然声明元素的类型而不是缓冲区本身的类型有点奇怪，但是这种设计实现了ECS架构中的两个关键收益点：
++ 1. 这种设计不仅仅是支持一种float3型的动态缓存，或者任何其他常见的变量类型。只要元素分别单独包装到顶层结构体中，就可以添加任意数量的使用相同值类型的动态缓冲区。
++ 2.你可以将缓冲区元素类型包含到实体原型（EntityArchetypes）中，在外界看起来基本上就像是实体原型中的一个组件。
+
+#### 向实体中添加缓冲区类型
+
+想要向实体中添加一个缓冲区，你可以使用向实体添加组件类型的一般方法
+
+##### 使用 AddBuffer()
+
+```c#
+
+entityManager.AddBuffer<MyBufferElement>(entity);
+
+```
+
+##### 使用原型
+
+```c#
+
+Entity e = entityManager.CreateEntity(typeof(MyBufferElement));
+
+```
+
+#### 访问缓冲区
+
+在访问常规的组件数据的方法之外，有很多种访问动态缓冲区的方法
+
+##### 直接的，仅在主线程上的访问
+
+```c#
+
+DynamicBuffer<MyBufferElement> buffer = entityManager.GetBuffer<MyBufferElement>(entity);
+
+```
+
+##### 基于实体访问
+
+你也可以通过事物组件系统（JobComponentSystem）来逐个实体查找缓冲区
+
+```c#
+
+    var lookup = GetBufferFromEntity<MyBufferElement>();
+    var buffer = lookup[myEntity];
+    buffer.Append(17);
+    buffer.RemoveAt(0);
+
+```
+
+#### 重新解析缓冲区（实验性）
+
+缓冲区可以被重新解析为一个有相同大小的其他类型。想法是允许控制类型多义，并且摆脱当存在类型问题时对元素类型进行包装的操作。要使用重新解析，调用Reinterpret<T>即可
+
+```c#
+
+var intBuffer = entityManager.GetBuffer<MyBufferElement>().Reinterpret<int>();
+
+```
+
+重解析后的缓冲区带有原来缓冲区的安全句柄，可以安全使用。它们都在底层使用相同的缓冲区头（BufferHeader），因此对一个重解析后的缓冲区的修改会直接反应到其转化类型出缓冲区。
+
+注意这里没有做类型检测，所以将unit缓冲区别名称为float缓冲区也是可以的。
+
+#### 内存块组件数据
