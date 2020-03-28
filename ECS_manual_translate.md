@@ -481,3 +481,49 @@ var intBuffer = entityManager.GetBuffer<MyBufferElement>().Reinterpret<int>();
 注意这里没有做类型检测，所以将unit缓冲区别名称为float缓冲区也是可以的。
 
 #### 内存块组件数据
+
+内存块组件用于将数据关联到特定的内存块。
+
+内存块组件包含特定内存块中应用到所有实体上数据。例如，假设有一些代表3D对象的实体的内存块，这些实体由空间距离组织在一起，可以通过内存块组件在内存块中存储这些实体的包围盒。内存块组件使用接口类型IComponentData。
+
+虽然内存块组件可以拥有对单个内存块来说唯一的值，它们仍然是内存块中实体原型的组成部分。因此如果将一个内存块组件从实体中移除，这个实体会被移动到其他的内存块中（有可能是一个新内存块）。类似的，如果向实体中添加一个内存块组件，以为实体的原型改变了，实体也会被移动到一个别的内存块里；增加内存块组件并不影响原来内存块中剩余的实体。
+
+如果你改变了内存块中某个实体的内存块组件中的值，会同时改变所有共用内存块组件的实体的内存块组件的值。如果改变了某个组件的原型使得该实体被移动到一个新的内存块里，恰巧这个内存块里面有相同类型的内存块组件，那么目标内存块中的内存块组件的已有值会继续保留。（如果实体被移动到一个新建的内存块中，那么内存块组件的值会从实体的源内存块里被复制过来）
+
+操作内存块组件和操作泛用组件的主要区别在于使用不同的方法来添加，设置和删除组件。内存块组件还有它们自己的ComponentType方法来定义实体原型和查询。
+
+**相关的API**
+
+
+|Purpose|Function|
+|--- |--- |
+|Declaration|IComponentData|
+||ArchetypeChunk methods|
+|Read|GetChunkComponentData(ArchetypeChunkComponentType)|
+|Check|HasChunkComponent(ArchetypeChunkComponentType)|
+|Write|SetChunkComponentData(ArchetypeChunkComponentType, T)|
+||EntityManager methods|
+|Create|AddChunkComponentData(Entity)|
+|Create|AddChunkComponentData(EntityQuery, T)|
+|Create|AddComponents(Entity,ComponentTypes)|
+|Get type info|GetArchetypeChunkComponentType(Boolean)|
+|Read|GetChunkComponentData(ArchetypeChunk)|
+|Read|GetChunkComponentData(Entity)|
+|Check|HasChunkComponent(Entity)|
+|Delete|RemoveChunkComponent(Entity)|
+|Delete|RemoveChunkComponentData(EntityQuery)|
+|Write|EntityManager.SetChunkComponentData(ArchetypeChunk, T)|
+
+##### 声明一个内存块组件
+
+内存块组件使用接口类型IComponentData
+
+```c#
+public struct ChunkComponentA : IComponentData
+{
+    public float Value;
+}
+```
+
+##### 创建一个内存块组件
+
