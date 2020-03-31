@@ -527,3 +527,94 @@ public struct ChunkComponentA : IComponentData
 
 ##### 创建一个内存块组件
 
+可以通过使用目标内存块中的实体或通过实体查询选择一组目标内存块来直接添加内存块组件。内存块组件不能在事务中添加，也不能通过EntityCommandBuffer来添加。
+
+你还可以将内存块组件当作EntityArchetype或用于创建实体的ComponentType列表的一部分，此时内存块组件会为每个存储该原型的实体的内存块中创建。在这些方法中使用ComponentType.ChunkComponent<T>或者ComponentType.ChunkComponentReadOnly<T>,否则组件会被当作泛用组件处理。
+
++ 使用内存块中的某个实体创建内存块组件
+
+对于目标内存块中的某个实体，可以使用EntityMananger.AddChunkComponentData<T>方法来向内存块汇总添加内存块组件：
+
+```C#
+EntityManager.AddChunkComponentData<ChunkComponentA>(entity);
+```
+
+使用该方法，不能立即对实体组件设置值
+
++ 使用实体查询(EntityQuery)创建内存块组件
+
+对选中所有需要添加内存块组件的实体查询，可以添加组件并设置组件值，这一操作使用EntityManager.AddChunkComponentData<T>()方法：
+
+```C#
+EntityQueryDesc ChunksWithoutComponentADesc = new EntityQueryDesc()
+{
+    None = new ComponentType[] {ComponentType.ChunkComponent<ChunkComponentA>()}
+};
+ChunksWithoutChunkComponentA = GetEntityQuery(ChunksWithoutComponentADesc);
+
+EntityManager.AddChunkComponentData<ChunkComponentA>(ChunksWithoutChunkComponentA,
+        new ChunkComponentA() {Value = 4});
+```
+
+使用该方法，可以对所有新内存块组件设置相同的初始值
+
++ 使用实体原型(EntityArchetype)
+
+当使用原型或组件类型列表创建实体时，将内存块组件包含在原型中：
+
+```c#
+ArchetypeWithChunkComponent = EntityManager.CreateArchetype(
+    ComponentType.ChunkComponent(typeof(ChunkComponentA)),
+    ComponentType.ReadWrite<GeneralPurposeComponentA>());
+var entity = EntityManager.CreateEntity(ArchetypeWithChunkComponent);
+```
+
+或者使用组件类型列表
+
+```C#
+ComponentType[] compTypes = {ComponentType.ChunkComponent<ChunkComponentA>(),
+                             ComponentType.ReadOnly<GeneralPurposeComponentA>()};
+var entity = EntityManager.CreateEntity(compTypes)
+```
+
+通过上述方法，新内存块的内存块组件在实体的构造过程中创建，初始化为结构的默认值。已存在的内存块中的内存块组件不变。参照《更新内存块组件》这一节来了解如何对给定的实体引用设置内存块组件。
+
+##### 读取内存块组件
+
+可以通过目标内存块中的某个实体来读取内存块组件，也可以使用代表内存块的ArchetypeChunk对象来读取。
+
++ 通过内存块中的实体读取内存块组件
+
+对于某个实体，可以使用EntityManager。GetChunkComponentData<T>来访问某个内存块组件：
+
+```c#
+if(EntityManager.HasChunkComponent<ChunkComponentA>(entity))
+    chunkComponentValue = EntityManager.GetChunkComponentData<ChunkComponentA>(entity);
+```
+
+也可以建立一个fluent query来选择金包含某个内存块组件的实体：
+
+```c#
+Entities.WithAll(ComponentType.ChunkComponent<ChunkComponentA>()).ForEach(
+    (Entity entity) =>
+{
+    var compValue = EntityManager.GetChunkComponentData<ChunkComponentA>(entity);
+    //...
+});
+```
+
+注意不能在查询的for-each循环中传递内存块组件。相反，必须传递实体对象，并使用EntityManager来访问内存块组件。
+
++ 通过ArchetypeChunk实例来读取内存块组件
+
+对于某个内存块，可以使用EntityManager.GetChunkComponentData<T>方法来读取内存块组件。下列代码遍历所有内存块找到符合的查询，然后访问ChunkComponentA类型的内存块组件：
+
+```c#
+var chunks = ChunksWithChunkComponentA.CreateArchetypeChunkArray(Allocator.TempJob);
+foreach (var chunk in chunks)
+{
+    var compValue = EntityManager.GetChunkComponentData<ChunkComponentA>(chunk);
+    //..
+}
+chunks.Dispose();
+```
