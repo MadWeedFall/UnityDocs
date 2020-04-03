@@ -61,16 +61,16 @@ EntityManager管理在World（世界）中的所有实体。EntityManager维护�
 
 你可以通过下列方式一个一个的创建实体：
 
-    + 使用CommonType对象数组创建带有组件的实体
-    + 使用EntityArcheType创建带有组件的实体
-    + 使用Instantiate，拷贝一个已存在的实体，包括该实体当前的数据
-    + 创建一个不带组件的实体，然后在向其添加组件。（可以在实体创建后立即添加组件或在需要的时候添加额外的组件。）
++ 使用CommonType对象数组创建带有组件的实体
++ 使用EntityArcheType创建带有组件的实体
++ 使用Instantiate，拷贝一个已存在的实体，包括该实体当前的数据
++ 创建一个不带组件的实体，然后在向其添加组件。（可以在实体创建后立即添加组件或在需要的时候添加额外的组件。）
 
 你也可以通过下列方式一次创建多个实体：
     
-    + 使用CreateEntity在一个NativeArray中填充属于相同原型的实体。
-    + 使用Instantiate在一个NativeArray中填充已存在实体的拷贝，包括实体中当前的数据。
-    + 使用CreateChunk显式创建多个包含指定数量特定原型的实体的内存块
++ 使用CreateEntity在一个NativeArray中填充属于相同原型的实体。
++ 使用Instantiate在一个NativeArray中填充已存在实体的拷贝，包括实体中当前的数据。
++ 使用CreateChunk显式创建多个包含指定数量特定原型的实体的内存块
 
 #### 添加删除组件
 
